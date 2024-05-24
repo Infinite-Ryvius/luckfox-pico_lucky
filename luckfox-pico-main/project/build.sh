@@ -33,7 +33,12 @@ GLOBAL_INITRAMFS_BOOT_NAME=""
 GLOBAL_PARTITIONS=""
 GLOBAL_SDK_VERSION=""
 
-export RK_JOBS=$((`getconf _NPROCESSORS_ONLN` / 2 + 1 ))
+if [ `getconf _NPROCESSORS_ONLN` -eq 1 ]; then
+	export RK_JOBS=1
+else
+	export RK_JOBS=$((`getconf _NPROCESSORS_ONLN` - 1 ))
+fi
+
 export RK_BUILD_VERSION_TYPE=RELEASE
 
 export SDK_ROOT_DIR=$SDK_ROOT_DIR
@@ -133,14 +138,14 @@ function choose_target_board()
 	echo ""
 
 	echo 'BoardConfig-*.mk naming rules:'
-	echo 'BoardConfig-"启动介质"-"电源方案"-"硬件版本"-"应用场景".mk'
-	echo 'BoardConfig-"boot medium"-"power solution"-"hardware version"-"applicaton".mk'
+	echo 'BoardConfig-"启动介质"-"系统版本"-"硬件版本"-"应用场景".mk'
+	echo 'BoardConfig-"boot medium"-"system version"-"hardware version"-"applicaton".mk'
 	echo ""
 
 	local cnt=0 space8="        "
 	for item in ${RK_TARGET_BOARD_ARRAY[@]}
 	do
-		local f0 boot_medium ddr pmic hardware_version product_name
+		local f0 boot_medium ddr sys_ver hardware_version product_name
 		echo "----------------------------------------------------------------"
 		echo -e "${C_GREEN}$cnt. $item${C_NORMAL}"
 		cnt=$(( cnt + 1 ))
@@ -148,7 +153,7 @@ function choose_target_board()
 		boot_medium=${f0%%-*}
 
 		f0=${f0#*-}
-		pmic=${f0%%-*}
+		sys_ver=${f0%%-*}
 
 		f0=${f0#*-}
 		hardware_version=${f0%%-*}
@@ -157,7 +162,7 @@ function choose_target_board()
 		product_name=${f0%%-*}
 		product_name=${product_name%%.mk}
 		echo "${space8}${space8}             boot medium(启动介质): ${boot_medium}"
-		echo "${space8}${space8}          power solution(电源方案): ${pmic}"
+		echo "${space8}${space8}          system version(系统版本): ${sys_ver}"
 		echo "${space8}${space8}        hardware version(硬件版本): ${hardware_version}"
 		echo "${space8}${space8}              applicaton(应用场景): ${product_name}"
 		echo "----------------------------------------------------------------"
@@ -187,7 +192,7 @@ function build_select_board()
 	fi
 
 	choose_target_board
-
+	rm -f $BOARD_CONFIG
 	ln -rfs $TARGET_PRODUCT_DIR/$RK_BUILD_TARGET_BOARD $BOARD_CONFIG
 	msg_info "switching to board: `realpath $BOARD_CONFIG`"
 
@@ -539,7 +544,7 @@ function build_kernel(){
 }
 
 function build_rootfs(){
-	check_config RK_BOOT_MEDIUM || return 0
+	check_config RK_BOOT_MEDIUM || check_config RK_TARGET_ROOTFS || return 0
 
 	make rootfs -C ${SDK_SYSDRV_DIR}
 
@@ -902,9 +907,11 @@ chmod a+x $coredump2sdcard
 
 	cat > $tmp_path <<EOF
 #!/bin/sh
+if [ "\$(id -u)" = "0" ]; then
 ulimit -c unlimited
 echo "/data/core-%p-%e" > /proc/sys/kernel/core_pattern
 echo "| /usr/bin/coredump2sdcard.sh %p %e" > /proc/sys/kernel/core_pattern
+fi
 EOF
 	chmod u+x $tmp_path
 }
@@ -1312,6 +1319,24 @@ function parse_partition_file()
 		echo "ln -sf /dev/${storage_dev_prefix}${part_num} ${part_name}" >> $RK_PROJECT_FILE_ROOTFS_SCRIPT
 		part_num=$(( part_num + 1 ))
 	done
+	case $RK_BOOT_MEDIUM in
+		emmc)
+			cat >> $RK_PROJECT_FILE_ROOTFS_SCRIPT <<EOF
+for i in \$(seq 5 8); do
+	det_partition="/dev/mmcblk1p\$i"
+	mount_point=\$(mount | grep "\$det_partition" | awk '{print \$3}')
+	if [ -n "\$mount_point" ]; then
+	echo "Unmounting : \$det_partition (\$mount_point)"
+	umount "\$det_partition"
+	else
+	echo "Partition is not mounted: \$det_partition"
+	fi
+done
+EOF
+	;;
+	*)
+	;;
+	esac
 	IFS=
 	echo "fi }" >> $RK_PROJECT_FILE_ROOTFS_SCRIPT
 
@@ -1820,6 +1845,7 @@ function build_firmware(){
 
 	if [ "$RK_BUILD_APP_TO_OEM_PARTITION" = "y" ];then
 		rm -rf $RK_PROJECT_PACKAGE_ROOTFS_DIR/oem/*
+		mkdir -p $RK_PROJECT_PACKAGE_ROOTFS_DIR/oem
 		build_mkimg $GLOBAL_OEM_NAME $RK_PROJECT_PACKAGE_OEM_DIR
 	else
 		mkdir -p $RK_PROJECT_PACKAGE_ROOTFS_DIR/oem
@@ -1958,6 +1984,19 @@ fi
 [ -L "$BOARD_CONFIG" ] && source $BOARD_CONFIG
 export RK_PROJECT_TOOLCHAIN_CROSS=$RK_TOOLCHAIN_CROSS
 export PATH="${SDK_ROOT_DIR}/tools/linux/toolchain/${RK_PROJECT_TOOLCHAIN_CROSS}/bin":$PATH
+
+if [[ "$LF_TARGET_ROOTFS" = "ubuntu" ]];then
+    if [[ "$LF_SUBMODULES_BY" = "github" ]];then
+        cp ${SDK_ROOT_DIR}/.gitmodules.github ${SDK_ROOT_DIR}/.gitmodules
+    else 
+        if [[ "$LF_SUBMODULES_BY" = "gitee" ]];then
+            cp ${SDK_ROOT_DIR}/.gitmodules.gitee ${SDK_ROOT_DIR}/.gitmodules
+        else
+            exit 0
+        fi
+    fi
+    git submodule update --init --recursive
+fi
 
 if echo $@|grep -wqE "help|-h"; then
 	if [ -n "$2" -a "$(type -t usage$2)" == function ]; then

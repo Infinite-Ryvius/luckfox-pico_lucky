@@ -28,6 +28,13 @@ else
 SYSDRV_LIB_TYPE ?= glibc
 endif
 
+ifneq ($(RK_BUILDROOT_DEFCONFIG),)
+BUILDROOT_DEFCONFIG := $(RK_BUILDROOT_DEFCONFIG)
+endif
+ifeq ($(BUILDROOT_DEFCONFIG),)
+BUILDROOT_DEFCONFIG := luckfox_pico_defconfig
+endif
+
 SYSDRV_ROOTFS_FS_TYPE ?= $(fs_type)
 ifneq ($(RK_ROOTFS_FS_TPYE),)
 SYSDRV_ROOTFS_FS_TYPE := $(RK_ROOTFS_FS_TPYE)
@@ -91,6 +98,29 @@ endif
 ifneq ($(OUTPUT_SYSDRV_RAMDISK_DIR),)
 SYSDRV_BUILD_RAMDISK_FLAG := YES
 endif
+
+################################################################################
+##   rootfs Select
+################################################################################
+ifneq ($(LF_TARGET_ROOTFS),)
+   TARGET_ROOTFS := $(LF_TARGET_ROOTFS)
+else
+#    TARGET_ROOTFS := ubuntu
+   TARGET_ROOTFS := buildroot
+#    TARGET_ROOTFS := busybox
+#    TARGET_ROOTFS := custom
+endif
+
+ifneq ($(findstring $(TARGET_ROOTFS),custom),)
+   ROOTFS_BUILD_ENV := 
+else ifneq ($(findstring $(TARGET_ROOTFS),ubuntu),)
+   ROOTFS_BUILD_ENV := ubuntu
+else ifneq ($(findstring $(TARGET_ROOTFS),buildroot),)
+   ROOTFS_BUILD_ENV := rootfs_prepare pctools buildroot boardtools drv
+else
+   ROOTFS_BUILD_ENV := rootfs_prepare pctools busybox boardtools drv
+endif
+
 ################################################################################
 ##   Public Configuraton
 ################################################################################
@@ -220,9 +250,16 @@ else
 $(error Please config TINY_ROOTFS_BUSYBOX_CFG on cfg/cfg.mk)
 endif
 endif
+
 BUSYBOX_CFG ?= config_normal
 BUSYBOX_VER ?= busybox-1.27.2
-BUSYBOX_DIR := $(SYSDRV_DIR)/source/busybox
+BUSYBOX_DIR ?= $(SYSDRV_DIR)/source/busybox
+
+BUILDROOT_CFG ?= config_normal
+BUILDROOT_VER ?= buildroot-2023.02.6
+BUILDROOT_DIR := $(SYSDRV_DIR)/source/buildroot
+
+UBUNTU_VER ?= luckfox-ubuntu-22.04.3
 
 TOOLCHAIN_RUNTIME_LIB_C:=lib.tar.bz2
 
@@ -265,7 +302,7 @@ endif
 ################################################################################
 all: uboot kernel rootfs env
 
-clean: uboot_clean kernel_clean busybox_clean pctools_clean boardtools_clean rootfs_clean drv_clean
+clean: uboot_clean kernel_clean buildroot_clean pctools_clean boardtools_clean rootfs_clean drv_clean
 
 distclean: clean out_clean
 
@@ -318,13 +355,13 @@ help:
 	@echo -e "$(C_YELLOW)        make uboot   [BOOT_MEDIUM=...]  # build uboot $(C_NORMAL)"
 	@echo -e "$(C_YELLOW)        make kernel  [BOOT_MEDIUM=...]  # build kernel $(C_NORMAL)"
 	@echo -e "$(C_YELLOW)        make rootfs  [BOOT_MEDIUM=...]  # build rootfs $(C_NORMAL)"
-	@echo -e "$(C_YELLOW)        make rootfs_ubi          # force package ubi rootfs image$(C_NORMAL)"
-	@echo -e "$(C_YELLOW)        make rootfs_ext4         # force package ext4 rootfs image$(C_NORMAL)"
-	@echo -e "$(C_YELLOW)        make rootfs_jffs2        # force package jffs2 rootfs image$(C_NORMAL)"
-	@echo -e "$(C_YELLOW)        make rootfs_squashfs     # force package squashfs rootfs image$(C_NORMAL)"
-	@echo -e "$(C_YELLOW)        make rootfs_erofs        # force package erofs rootfs image$(C_NORMAL)"
-	@echo -e "$(C_YELLOW)        make rootfs_initramfs    # force package initramfs rootfs image$(C_NORMAL)"
-	@echo -e "$(C_YELLOW)        make busybox_menuconfig  # config busybox $(C_NORMAL)"
+	@echo -e "$(C_YELLOW)        make rootfs_ubi          	# force package ubi rootfs image$(C_NORMAL)"
+	@echo -e "$(C_YELLOW)        make rootfs_ext4         	# force package ext4 rootfs image$(C_NORMAL)"
+	@echo -e "$(C_YELLOW)        make rootfs_jffs2        	# force package jffs2 rootfs image$(C_NORMAL)"
+	@echo -e "$(C_YELLOW)        make rootfs_squashfs     	# force package squashfs rootfs image$(C_NORMAL)"
+	@echo -e "$(C_YELLOW)        make rootfs_erofs        	# force package erofs rootfs image$(C_NORMAL)"
+	@echo -e "$(C_YELLOW)        make rootfs_initramfs    	# force package initramfs rootfs image$(C_NORMAL)"
+	@echo -e "$(C_YELLOW)        make buildroot_menuconfig  # config buildroot $(C_NORMAL)"
 	@echo -e "$(C_YELLOW)------------------------------------------------------------------------- $(C_NORMAL)"
 
 ################################################################################
@@ -456,15 +493,89 @@ else
 		$(BUSYBOX_DIR)/$(BUSYBOX_VER)/_install)
 endif
 else
+	
 	cp -af $(BUSYBOX_DIR)/$(BUSYBOX_VER)/_install/* $(SYSDRV_DIR_OUT_ROOTFS)
-
 	# luckfox
-	cp $(SYSDRV_DIR)/tools/board/android-tools/S99usb0config $(SYSDRV_DIR_OUT_ROOTFS)/etc/init.d
+	cp $(SYSDRV_DIR)/tools/board/android-tools/S90usb0config $(SYSDRV_DIR_OUT_ROOTFS)/etc/init.d
+	touch $(SYSDRV_DIR_OUT_ROOTFS)/userdata/.busybox
 
 endif
 
 busybox_clean:
 	$(AT)rm -rf $(BUSYBOX_DIR)/$(BUSYBOX_VER)
+
+##########################################################################################
+#   build buildroot
+#   author :luckfox team
+#	date:2023-11-11
+##########################################################################################
+buildroot_menuconfig:
+	$(MAKE) menuconfig -C $(BUILDROOT_DIR)/$(BUILDROOT_VER) 
+	$(MAKE) source -C $(BUILDROOT_DIR)/$(BUILDROOT_VER) 
+	
+buildroot_savedefconfig:
+	$(MAKE) savedefconfig -C $(BUILDROOT_DIR)/$(BUILDROOT_VER) 
+    
+buildroot: prepare
+	@echo -e "$(C_GREEN) ==sysdrv== build buildroot   $(C_NORMAL)" 
+	test -f $(BUILDROOT_DIR)/$(BUILDROOT_VER)/output/target/bin/busybox  || (\
+		rm $(BUILDROOT_DIR)/$(BUILDROOT_VER) -rf ;\
+		mkdir -p $(BUILDROOT_DIR) ;\
+		tar xzf $(SYSDRV_DIR)/tools/board/buildroot/$(BUILDROOT_VER).tar.gz -C $(BUILDROOT_DIR) ;\
+		cp $(SYSDRV_DIR)/tools/board/buildroot/luckfox_pico_defconfig $(BUILDROOT_DIR)/$(BUILDROOT_VER)/configs/ ;\
+		cp $(SYSDRV_DIR)/tools/board/buildroot/busybox.config $(BUILDROOT_DIR)/$(BUILDROOT_VER)/package/busybox/ ;\
+	);
+
+	$(MAKE) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) $(BUILDROOT_DEFCONFIG) -C $(BUILDROOT_DIR)/$(BUILDROOT_VER) 
+	$(MAKE) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) source -C $(BUILDROOT_DIR)/$(BUILDROOT_VER) 
+	$(MAKE) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) -j$(SYSDRV_JOBS) -C $(BUILDROOT_DIR)/$(BUILDROOT_VER) 
+
+ifeq ($(SYSDRV_BUILD_RAMDISK_FLAG),YES)
+    tar xf $(SYSDRV_DIR)/tools/board/rootfs_script.tar -C $(BUILDROOT_DIR)/$(BUILDROOT_VER)/output/target
+	ifneq ($(OUTPUT_SYSDRV_RAMDISK_TINY_ROOTFS_DIR),)
+		$(call MAROC_COPY_PKG_TO_SYSDRV_OUTPUT, $(OUTPUT_SYSDRV_RAMDISK_TINY_ROOTFS_DIR), \
+			$(SYSDRV_DIR)/tools/board/buildroot/busybox/init \
+			$(BUILDROOT_DIR)/$(BUILDROOT_VER)/output/target)
+	else
+		$(call MAROC_COPY_PKG_TO_SYSDRV_OUTPUT, $(SYSDRV_DIR_OUT_ROOTFS), \
+			$(SYSDRV_DIR)/tools/board/buildroot/busybox/init \
+			$(BUILDROOT_DIR)/$(BUILDROOT_VER)/output/target)
+	endif
+else
+	tar xf $(BUILDROOT_DIR)/$(BUILDROOT_VER)/output/images/rootfs.tar -C $(SYSDRV_DIR_OUT_ROOTFS)
+	cp $(SYSDRV_DIR)/tools/board/buildroot/shadow_defconfig $(SYSDRV_DIR_OUT_ROOTFS)/etc/shadow
+	cp $(SYSDRV_DIR)/tools/board/buildroot/sshd_defconfig $(SYSDRV_DIR_OUT_ROOTFS)/etc/ssh/sshd_config
+	cp $(SYSDRV_DIR)/tools/board/buildroot/samba_defconfig $(SYSDRV_DIR_OUT_ROOTFS)/etc/samba/smb.conf
+	cp $(SYSDRV_DIR)/tools/board/buildroot/smbpasswd_defconfig $(SYSDRV_DIR_OUT_ROOTFS)/etc/samba/smbpasswd
+	cp $(SYSDRV_DIR)/tools/board/buildroot/S50sshd $(SYSDRV_DIR_OUT_ROOTFS)/etc/init.d/
+	cp $(SYSDRV_DIR)/tools/board/buildroot/S99python $(SYSDRV_DIR_OUT_ROOTFS)/etc/init.d/
+	cp $(SYSDRV_DIR)/tools/board/android-tools/S90usb0config $(SYSDRV_DIR_OUT_ROOTFS)/etc/init.d/
+	
+endif
+
+buildroot_clean:
+	$(AT)rm -rf $(BUILDROOT_DIR)/$(BUILDROOT_VER) 
+
+##########################################################################################
+#   build ubuntu
+#   author :luckfox team
+#	date:2023-11-28
+##########################################################################################
+ubuntu: prepare
+	@echo -e "$(C_GREEN) ==sysdrv== build ubuntu   $(C_NORMAL)" 
+	echo "====$(LF_TARGET_ROOTFS)===="
+	test -f $(SYSDRV_DIR)/tools/board/ubuntu/$(UBUNTU_VER).tar.gz || (\
+		pushd  $(SYSDRV_DIR)/tools/board/ubuntu/ ;\
+		./split_and_check_md5.sh merge ./$(UBUNTU_VER).tar.gz ;\
+		popd ;\
+	);
+	test -f $(SYSDRV_DIR_OUT_ROOTFS)/userdate/.ubuntu || (\
+		mkdir -p $(SYSDRV_DIR_OUT_ROOTFS) ;\
+		rm $(SYSDRV_DIR_OUT_ROOTFS)/* -rf ;\
+		tar xzf $(SYSDRV_DIR)/tools/board/ubuntu/$(UBUNTU_VER).tar.gz -C $(SYSDRV_DIR_OUT_ROOTFS) ;\
+	);
+ubuntu_clean:
+	$(AT)rm -rf $(SYSDRV_DIR_OUT_ROOTFS)
 
 ##########################################################################################
 #	build pc tools
@@ -511,7 +622,7 @@ drv_clean:
 ##########################################################################################
 #	build rootfs
 ##########################################################################################
-rootfs: rootfs_prepare pctools busybox boardtools drv
+rootfs: $(ROOTFS_BUILD_ENV)
 	@echo -e "$(C_GREEN) ==sysdrv== build rootfs  $(C_NORMAL)"
 	make -C $(SYSDRV_DIR) strip
 	pushd $(SYSDRV_DIR)/out;tar cf $(OUT_ROOTFS).tar $(OUT_ROOTFS);popd
