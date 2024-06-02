@@ -102,6 +102,16 @@
 #define RKIMG_BOOTCOMMAND		"boot_fit;"
 #define CONFIG_EXTRA_ENV_SETTINGS	ENV_MEM_LAYOUT_SETTINGS
 #endif
+
+#ifdef CONFIG_ENABLE_LEGACY
+#undef RKIMG_BOOTCOMMAND
+#define RKIMG_BOOTCOMMAND 	\
+		"blk read.part $kernel_addr_c boot;" \
+		"blk read.part $fdt_addr_r fdt;" \
+		"bootm $kernel_addr_c - $fdt_addr_r"
+#endif
+
+
 #endif	/* !CONFIG_SPL_BUILD */
 
 #endif
