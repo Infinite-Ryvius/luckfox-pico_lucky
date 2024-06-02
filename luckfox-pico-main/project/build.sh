@@ -1276,7 +1276,7 @@ function parse_partition_file()
 	echo "mkdir -p /dev/block/by-name" >> $RK_PROJECT_FILE_ROOTFS_SCRIPT
 	echo "cd /dev/block/by-name" >> $RK_PROJECT_FILE_ROOTFS_SCRIPT
 
-	SYS_BOOTARGS="sys_bootargs="
+	SYS_BOOTARGS="sys_bootargs= loglevel=0"
 	IFS=,
 	for part in $GLOBAL_PARTITIONS;
 	do
