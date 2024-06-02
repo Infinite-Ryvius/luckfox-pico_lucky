@@ -7,8 +7,13 @@
 #include <common.h>
 #include <dm.h>
 
-static int blk_curr_iftype;  /* 0: IF_TYPE_UNKNOWN */
-static int blk_curr_dev = -1;
+
+//static int blk_curr_iftype;  /* 0: IF_TYPE_UNKNOWN */
+//static int blk_curr_dev = -1;
+
+static int blk_curr_iftype = IF_TYPE_MTD;  /* 0: IF_TYPE_UNKNOWN */
+static int blk_curr_dev = 1;
+
 
 static int do_blk(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
 {

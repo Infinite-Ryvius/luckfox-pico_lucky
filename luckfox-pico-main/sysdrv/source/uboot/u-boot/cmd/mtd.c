@@ -219,6 +219,30 @@ static int mtd_special_write_oob(struct mtd_info *mtd, u64 off,
 	return ret;
 }
 
+#include <boot_rkimg.h>
+static int get_part_offset_size(char *part_name, u64 *offset, u64 *size)
+{
+	struct blk_desc *dev_desc;
+	disk_partition_t part;
+
+	dev_desc = rockchip_get_bootdev();
+	if (dev_desc == NULL)
+		 return -1;
+
+	if (part_get_info_by_name(dev_desc, part_name, &part) < 0)
+	{
+		 printf("No %s partition\n", part_name);
+		 return -1;
+	}
+
+	*offset = part.start * part.blksz;
+	*size = part.size * part.blksz;
+
+	printf("offset:%lld, size:%lld, blksz:%ld\n", *offset, *size, part.blksz);
+
+	return 0;
+}
+
 static int do_mtd(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
 {
 	struct mtd_info *mtd;
@@ -261,10 +285,10 @@ static int do_mtd(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
 	    !strncmp(cmd, "write", 5)) {
 		bool has_pages = mtd->type == MTD_NANDFLASH ||
 				 mtd->type == MTD_MLCNANDFLASH;
-		bool dump, read, raw, woob, write_empty_pages;
+		bool dump, read, raw, woob, part, write_empty_pages;
 		struct mtd_oob_ops io_op = {};
 		uint user_addr = 0, npages;
-		u64 start_off, off, len, remaining, default_len;
+		u64 start_off, off, len=0, remaining, default_len;
 		u32 oob_len;
 		u8 *buf;
 		int ret;
@@ -273,18 +297,29 @@ static int do_mtd(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
 		read = dump || !strncmp(cmd, "read", 4);
 		raw = strstr(cmd, ".raw");
 		woob = strstr(cmd, ".oob");
+		part = strstr(cmd, ".part");
 		write_empty_pages = !has_pages || strstr(cmd, ".dontskipff");
 
 		if (!dump) {
 			if (!argc)
 				return CMD_RET_USAGE;
-
 			user_addr = simple_strtoul(argv[0], NULL, 16);
 			argc--;
 			argv++;
 		}
 
-		start_off = argc > 0 ? simple_strtoul(argv[0], NULL, 16) : 0;
+		if (!part)
+		{
+			start_off = argc > 0 ? simple_strtoul(argv[0], NULL, 16) : 0;
+		}
+		else
+		{
+			ret = get_part_offset_size(argv[0], &start_off, &len);
+			if (ret != 0)
+			{
+				return CMD_RET_FAILURE;
+			}
+		}
 		if (!mtd_is_aligned_with_min_io_size(mtd, start_off)) {
 			printf("Offset not aligned with a page (0x%x)\n",
 			       mtd->writesize);
@@ -292,8 +327,10 @@ static int do_mtd(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
 		}
 
 		default_len = dump ? mtd->writesize : mtd->size;
-		len = argc > 1 ? simple_strtoul(argv[1], NULL, 16) :
-				 default_len;
+		if (!part)
+		{
+			len = argc > 1 ? simple_strtoul(argv[1], NULL, 16) : default_len;
+				}
 		if (!mtd_is_aligned_with_min_io_size(mtd, len)) {
 			len = round_up(len, mtd->writesize);
 			printf("Size not on a page boundary (0x%x), rounding to 0x%llx\n",
