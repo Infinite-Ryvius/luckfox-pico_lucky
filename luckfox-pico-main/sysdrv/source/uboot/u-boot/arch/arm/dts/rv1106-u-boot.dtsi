@@ -146,7 +146,8 @@
 		reg = <0>;
 		spi-tx-bus-width = <1>;
 		spi-rx-bus-width = <4>;
-		spi-max-frequency = <80000000>;
+		/*spi-max-frequency = <80000000>;*/
+		spi-max-frequency = <160000000>;
 	};
 
 	spi_nor: flash@1 {
@@ -157,6 +158,7 @@
 		spi-tx-bus-width = <1>;
 		spi-rx-bus-width = <4>;
 		spi-max-frequency = <100000000>;
+		status = "disabled";
 	};
 };
 
