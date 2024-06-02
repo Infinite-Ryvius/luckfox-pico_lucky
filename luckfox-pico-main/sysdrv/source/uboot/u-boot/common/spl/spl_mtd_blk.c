@@ -20,6 +20,14 @@
 #include <linux/compiler.h>
 #include <linux/mtd/mtd.h>
 
+typedef struct {
+	uint32_t header;	/* verify header: 0x12345678 */
+	uint32_t len;		/* fdt len */
+	uint32_t crc;		/* crc32 verify */
+	char fdt[];			/* fdt data */
+} Verify_INFO;
+static char *g_fdt_addr = NULL;
+
 static int spl_mtd_get_device_index(u32 boot_device)
 {
 	switch (boot_device) {
@@ -159,7 +167,133 @@ int spl_mtd_load_image(struct spl_image_info *spl_image,
 
 	return ret;
 }
+int spl_mtd_load_kernel_image(struct spl_image_info *spl_image,
+			   struct spl_boot_device *bootdev, struct blk_desc *desc_tmp)
+{
+	struct image_header *legacy_header;
+	struct blk_desc *desc;
+	int ret = -1;
+	lbaint_t image_sector = CONFIG_MTD_BLK_U_BOOT_OFFS;
+	/* Avoid conflicts between the decompressed address and the current address, */
+	/* which will slow down the startup speed. */
+	long os_addr =  0x800000;
+	int cnt;
+
+	if (desc_tmp != NULL)
+	{
+		desc = desc_tmp;
+	}
+	else
+	{
+		desc = find_mtd_device(spl_mtd_get_device_index(bootdev->boot_device));
+		if (!desc)
+			return -ENODEV;
+	}
+
+	disk_partition_t info = {0};
+
+	ret = part_get_info_by_name(desc, PART_BOOT, &info);
+	if (ret > 0)
+		image_sector = info.start;
+
+	/* load legacy image*/
+	legacy_header = (struct image_header *)(CONFIG_SYS_TEXT_BASE - sizeof(struct image_header));
+
+	ret = blk_dread(desc, image_sector, 1, legacy_header);
+	if (ret != 1)
+		return -ENODEV;
+
+	/* legacy_hader */
+	if (legacy_header->ih_magic != htonl(0x27051956))
+	{
+		return 0;
+	}
+
+	/* read legacy and fdt */
+	memcpy((char*)os_addr, ((char*)legacy_header + sizeof(struct image_header)), desc->blksz - sizeof(struct image_header));
+	cnt = (htonl(legacy_header->ih_size) + sizeof(struct image_header) - 1 ) / desc->blksz;
+	blk_dread(desc, image_sector+1, cnt, (char *)os_addr + desc->blksz - sizeof(struct image_header));
+
+	spl_image->name = "Linux";
+	spl_image->os = IH_OS_LINUX;
+	spl_image->load_addr   = os_addr;
+	spl_image->entry_point = os_addr;
+	spl_image->entry_point_os = os_addr;
+	spl_image->fdt_addr = (void*)g_fdt_addr;
+	return 0;
+}
+
+int bool_jump_uboot = 0;
+int spl_mtd_load_image_select(struct spl_image_info *spl_image,
+			  struct spl_boot_device *bootdev)
+{
+	if (bool_jump_uboot)
+	{
+		goto uboot;
+	}
+
+	disk_partition_t info = {0};
+	struct blk_desc *desc;
+	Verify_INFO *verify_info = (Verify_INFO *)(0xc00000);
+	int ret = 0;
+	int rest_len = 0;
+
+	
+	desc = find_mtd_device(spl_mtd_get_device_index(bootdev->boot_device));
+	if (!desc)
+	{
+		printf("%s find_mtd_device failed!\n", __func__);
+		goto uboot;
+	}
+
+	ret = part_get_info_by_name(desc, PART_VERIFY, &info);
+	if (!ret)
+	{
+		printf("%s part_get_info_by_name %s failed!\n", __func__, PART_VERIFY);
+		goto uboot;
+	}
+	
+
+	blk_dread(desc, info.start, 1, (char*)verify_info);
+	if (verify_info->header != 0x12345678)
+	{
+		printf("%s verify_info->header is invalid %x!\n", __func__, verify_info->header);
+		goto uboot;
+	}
+	
+	if (verify_info->len > (info.size * info.blksz))
+	{
+		printf("%s verify_info->len is too large %u!\n", __func__, verify_info->len);
+		goto uboot;
+	}
+
+	rest_len = verify_info->len - info.blksz;
+	/* read rest data */
+	if (rest_len > 0)
+	{
+		rest_len = ((rest_len + info.blksz - 1) / info.blksz);
+		blk_dread(desc, info.start + 1, rest_len, (char*)verify_info + info.blksz);
+	}
+
+	/* crc check */
+#if 0
+	if (verify_info->crc != crc32(0xFFFFFFFF, (unsigned char*)verify_info->fdt, verify_info->len))
+	{
+		printf("%s verify_info->crc check failed!\n", __func__);
+		goto uboot;
+	}
+#endif
+	g_fdt_addr = verify_info->fdt;
+
+	return spl_mtd_load_kernel_image(spl_image, bootdev, desc);
+
+uboot:
+	return spl_mtd_load_image(spl_image, bootdev);
+}
+
+
 
 SPL_LOAD_IMAGE_METHOD("MTD0", 0, BOOT_DEVICE_MTD_BLK_NAND, spl_mtd_load_image);
-SPL_LOAD_IMAGE_METHOD("MTD1", 0, BOOT_DEVICE_MTD_BLK_SPI_NAND, spl_mtd_load_image);
+//SPL_LOAD_IMAGE_METHOD("MTD1", 0, BOOT_DEVICE_MTD_BLK_SPI_NAND, spl_mtd_load_image);
+SPL_LOAD_IMAGE_METHOD("MTD1", 0, BOOT_DEVICE_MTD_BLK_SPI_NAND, spl_mtd_load_image_select);
 SPL_LOAD_IMAGE_METHOD("MTD2", 0, BOOT_DEVICE_MTD_BLK_SPI_NOR, spl_mtd_load_image);

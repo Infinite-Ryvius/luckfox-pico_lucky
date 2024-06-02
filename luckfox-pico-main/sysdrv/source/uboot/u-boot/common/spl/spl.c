@@ -490,7 +490,7 @@ static int spl_initr_dm(void)
 }
 #endif
 
-#if defined(CONFIG_SPL_KERNEL_BOOT) && !defined(CONFIG_ARM64)
+#if 1 //#if defined(CONFIG_SPL_KERNEL_BOOT) && !defined(CONFIG_ARM64)
 static void boot_jump_linux(struct spl_image_info *spl_image)
 {
 	void (*kernel_entry)(int zero, int arch, ulong params);
@@ -502,6 +502,29 @@ static void boot_jump_linux(struct spl_image_info *spl_image)
 	kernel_entry(0, 0, (ulong)spl_image->fdt_addr);
 }
 #endif
+
+extern int bool_jump_uboot;
+static int jump_uboot(void)
+{
+	//printf("Hit any key to jump uboot('CTRL+C')\n");
+	/*
+	 * Check if key already pressed
+	 */
+
+	//udelay(1000);
+	if (serial_tstc())
+	{
+		switch(serial_getc())
+		{
+			case 0x03: /*CTRL+C*/
+				bool_jump_uboot = 1;
+				break;
+			default:
+				break;		}
+	}
+
+	return 0;
+}
 
 void board_init_r(gd_t *dummy1, ulong dummy2)
 {
@@ -544,6 +567,7 @@ void board_init_r(gd_t *dummy1, ulong dummy2)
 #if CONFIG_IS_ENABLED(BOARD_INIT)
 	spl_board_init();
 #endif
+	jump_uboot();
 
 	memset(&spl_image, '\0', sizeof(spl_image));
 
@@ -612,7 +636,7 @@ void board_init_r(gd_t *dummy1, ulong dummy2)
 		spl_fixup_fdt();
 		spl_board_prepare_for_linux();
 		jump_to_image_linux(&spl_image);
-#elif defined(CONFIG_SPL_KERNEL_BOOT) && !defined(CONFIG_ARM64)
+#elif 1 //#elif defined(CONFIG_SPL_KERNEL_BOOT) && !defined(CONFIG_ARM64)
 		boot_jump_linux(&spl_image);
 #endif
 		break;

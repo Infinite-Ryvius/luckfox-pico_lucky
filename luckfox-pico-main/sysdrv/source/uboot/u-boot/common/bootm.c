@@ -658,6 +658,37 @@ static void fixup_silent_linux(void)
 }
 #endif /* CONFIG_SILENT_CONSOLE */
 
+typedef struct {
+	uint32_t header;	/* verify header: 0x12345678 */
+	uint32_t len;		/* fdt len */
+	uint32_t crc;		/* crc32 verify */
+	char fdt[];			/* fdt data */
+} Verify_INFO;
+static int bootm_update_verify(bootm_headers_t *images)
+{
+	char cmd[128] = {0};
+	Verify_INFO *verify_info = (Verify_INFO *)((char *)(images->ft_addr) - offsetof(Verify_INFO, fdt));
+	verify_info->header = 0x12345678;
+	verify_info->len = images->ft_len*2;
+	verify_info->crc = crc32(0xFFFFFFFF, (unsigned char*)verify_info->fdt, verify_info->len);
+	Verify_INFO *verify_info_old = (Verify_INFO *)((char*)(verify_info->fdt) + 0x20000);
+	
+	sprintf(cmd, "blk read.part %p verify", verify_info_old);
+	run_command(cmd, 0);
+	if (verify_info_old->crc == verify_info->crc)
+	{
+		return 0;
+	}
+	
+	sprintf(cmd, "blk erase.part verify 0");
+	run_command(cmd, 0);
+	sprintf(cmd, "blk write.part %p verify", verify_info);
+	run_command(cmd, 0);
+	printf("bootm_update_verify success!\n");
+	
+	return 0;
+}
+
 /**
  * Execute selected states of the bootm command.
  *
@@ -800,6 +831,9 @@ int do_bootm_states(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[],
 		puts("subcommand not supported\n");
 		return ret;
 	}
+
+	/* add to save data to verify partition */
+	bootm_update_verify(images);
 
 	/* Now run the OS! We hope this doesn't return */
 	if (!ret && (states & BOOTM_STATE_OS_GO))
