@@ -177,12 +177,12 @@
 
 /**********UART**********/
 &uart3 {
-	status = "okay";
+	status = "disabled";
 	pinctrl-names = "default";
 	pinctrl-0 = <&uart3m1_xfer>;
 };
 &uart4 {
-	status = "okay";
+	status = "disabled";
 	pinctrl-names = "default";
 	pinctrl-0 = <&uart4m1_xfer>;
 };
