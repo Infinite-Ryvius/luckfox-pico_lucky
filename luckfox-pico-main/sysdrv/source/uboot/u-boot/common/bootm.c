@@ -658,6 +658,7 @@ static void fixup_silent_linux(void)
 }
 #endif /* CONFIG_SILENT_CONSOLE */
 
+#ifdef CONFIG_ENABLE_LEGARCY
 typedef struct {
 	uint32_t header;	/* verify header: 0x12345678 */
 	uint32_t len;		/* fdt len */
@@ -688,6 +689,7 @@ static int bootm_update_verify(bootm_headers_t *images)
 	
 	return 0;
 }
+#endif
 
 /**
  * Execute selected states of the bootm command.
@@ -831,10 +833,10 @@ int do_bootm_states(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[],
 		puts("subcommand not supported\n");
 		return ret;
 	}
-
+#ifdef CONFIG_ENABLE_LEGARCY
 	/* add to save data to verify partition */
 	bootm_update_verify(images);
-
+#endif
 	/* Now run the OS! We hope this doesn't return */
 	if (!ret && (states & BOOTM_STATE_OS_GO))
 		ret = boot_selected_os(argc, argv, BOOTM_STATE_OS_GO,

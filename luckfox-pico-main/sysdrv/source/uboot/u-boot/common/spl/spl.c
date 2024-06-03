@@ -503,6 +503,7 @@ static void boot_jump_linux(struct spl_image_info *spl_image)
 }
 #endif
 
+#ifdef CONFIG_ENABLE_LEGARCY
 extern int bool_jump_uboot;
 static int jump_uboot(void)
 {
@@ -525,6 +526,7 @@ static int jump_uboot(void)
 
 	return 0;
 }
+#endif
 
 void board_init_r(gd_t *dummy1, ulong dummy2)
 {
@@ -567,7 +569,10 @@ void board_init_r(gd_t *dummy1, ulong dummy2)
 #if CONFIG_IS_ENABLED(BOARD_INIT)
 	spl_board_init();
 #endif
+
+#ifdef CONFIG_ENABLE_LEGARCY
 	jump_uboot();
+#endif
 
 	memset(&spl_image, '\0', sizeof(spl_image));
 

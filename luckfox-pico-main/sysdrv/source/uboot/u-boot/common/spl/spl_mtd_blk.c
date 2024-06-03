@@ -167,6 +167,8 @@ int spl_mtd_load_image(struct spl_image_info *spl_image,
 
 	return ret;
 }
+
+#ifdef CONFIG_ENABLE_LEGARCY
 int spl_mtd_load_kernel_image(struct spl_image_info *spl_image,
 			   struct spl_boot_device *bootdev, struct blk_desc *desc_tmp)
 {
@@ -290,10 +292,15 @@ int spl_mtd_load_image_select(struct spl_image_info *spl_image,
 uboot:
 	return spl_mtd_load_image(spl_image, bootdev);
 }
-
+#endif
 
 
 SPL_LOAD_IMAGE_METHOD("MTD0", 0, BOOT_DEVICE_MTD_BLK_NAND, spl_mtd_load_image);
-//SPL_LOAD_IMAGE_METHOD("MTD1", 0, BOOT_DEVICE_MTD_BLK_SPI_NAND, spl_mtd_load_image);
+
+#ifdef CONFIG_ENABLE_LEGARCY
 SPL_LOAD_IMAGE_METHOD("MTD1", 0, BOOT_DEVICE_MTD_BLK_SPI_NAND, spl_mtd_load_image_select);
+#else
+SPL_LOAD_IMAGE_METHOD("MTD1", 0, BOOT_DEVICE_MTD_BLK_SPI_NAND, spl_mtd_load_image);
+#endif
+
 SPL_LOAD_IMAGE_METHOD("MTD2", 0, BOOT_DEVICE_MTD_BLK_SPI_NOR, spl_mtd_load_image);
